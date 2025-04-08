@@ -77,9 +77,6 @@ def main():
         if log_date.year != today.year or log_date.month != today.month:
             continue  # 이번 달이 아니면 무시
 
-        # ➕ 필터 통과 시만 그룹에 추가
-        grouped[(name, date)].append(log)
-
     # ✅ 그룹별 Summary 생성 또는 업데이트
     for (name, date), entries in grouped.items():
         total_hours = 0
