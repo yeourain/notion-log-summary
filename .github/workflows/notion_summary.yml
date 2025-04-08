@@ -1,0 +1,24 @@
+name: Auto Notion Summary Update
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'  # 10분마다 실행
+  workflow_dispatch:
+
+jobs:
+  run-script:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: pip install notion-client
+      - name: Run Notion Summary Script
+        run: python update_summary.py
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          LOG_DB_ID: ${{ secrets.LOG_DB_ID }}
+          SUMMARY_DB_ID: ${{ secrets.SUMMARY_DB_ID }}
