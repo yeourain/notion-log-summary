@@ -17,7 +17,7 @@ jobs:
       - name: Install dependencies
         run: pip install notion-client
       - name: Run Notion Summary Script
-        run: python update_summary.py
+        run: python test.py
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           LOG_DB_ID: ${{ secrets.LOG_DB_ID }}
