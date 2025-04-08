@@ -13,6 +13,15 @@ notion = Client(auth=NOTION_TOKEN)
 def split_long_text(text, max_length=2000):
     return [text[i:i+max_length] for i in range(0, len(text), max_length)]
 
+# ✅ 관계형 페이지에서 title 속성 추출 (프로젝트명용)
+def get_title_from_page(page):
+    for key, prop in page["properties"].items():
+        if prop.get("type") == "title":
+            title_data = prop.get("title")
+            if title_data:
+                return title_data[0]["plain_text"]
+    return None
+
 # ✅ 모든 Log 레코드 가져오기
 def get_log_entries():
     results = []
@@ -79,13 +88,14 @@ def main():
             # 프로젝트명: 관계형(Relation) 처리
             relations = p.get("프로젝트명", {}).get("relation", [])
             for rel in relations:
-                page = notion.pages.retrieve(rel["id"])
-                title_props = page["properties"]
-                title_key = next(iter(title_props))
-                title_value = title_props[title_key].get("title", [])
-                if title_value:
-                    project_list.add(title_value[0]["plain_text"])
-                    
+                try:
+                    page = notion.pages.retrieve(rel["id"])
+                    title = get_title_from_page(page)
+                    if title:
+                        project_list.add(title)
+                except Exception as err:
+                    print(f"⚠️ 프로젝트 조회 실패: {rel['id']} → {err}")
+
             # 업무명 + 업무요약
             task_title = p.get("업무명", {}).get("rich_text", [])
             task_detail = p.get("업무내용", {}).get("rich_text", [])
