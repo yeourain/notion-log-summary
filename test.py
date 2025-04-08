@@ -51,6 +51,7 @@ def find_existing_summary(name, date):
 def main():
     logs = get_log_entries()
     grouped = defaultdict(list)
+    project_cache = {}  # ✅ 프로젝트 페이지 캐시
 
     for log in logs:
         props = log["properties"]
@@ -87,15 +88,23 @@ def main():
 
             # 프로젝트명: 관계형(Relation) 처리
             relations = p.get("프로젝트명", {}).get("relation", [])
-            project_name = ""
             for rel in relations:
-                try:
-                    page = notion.pages.retrieve(rel["id"])
-                    title = get_title_from_page(page)
-                    if title:
-                        project_list.add(title)
-                except Exception as err:
-                    print(f"⚠️ 프로젝트 조회 실패: {rel['id']} → {err}")
+                pid = rel["id"]
+                if pid in project_cache:
+                    title = project_cache[pid]
+                else:
+                    try:
+                        page = notion.pages.retrieve(pid)
+                        title = get_title_from_page(page)
+                        project_cache[pid] = title
+                    except Exception as err:
+                        print(f"❌ 프로젝트 조회 실패: {pid} → {err}")
+                        title = None
+
+                if title:
+                    project_list.add(title)
+                    if not project_name:
+                        project_name = title
 
             # 업무명 + 업무요약
             task_title = p.get("업무명", {}).get("rich_text", [])
