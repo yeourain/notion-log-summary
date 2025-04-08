@@ -90,13 +90,13 @@ def main():
             
             # 🔒 근무시간: None 처리
             hour = p.get("근무시간", {}).get("number")
-            total_hours += hour if hour else 0
-
-            # ✅ [여기!] 총합 시간 제한 (8시간 초과시 자름)
-            total_hours = min(total_hours, 8)
+            hour = hour if hour else 0
+            total_hours += hour
 
             # 프로젝트명: 관계형(Relation) 처리
             relations = p.get("프로젝트명", {}).get("relation", [])
+            related_titles = []
+
             for rel in relations:
                 pid = rel["id"]
                 if pid in project_cache:
@@ -112,17 +112,26 @@ def main():
 
                 if title:
                     project_list.add(title)
+                    related_titles.append(title)
+
+            # ✅ 각 프로젝트에 시간 분배
+            split_hour = hour / len(related_titles) if related_titles else 0
 
             # 업무명 + 업무요약
             task_line = f"[{title}] "
             task_title = p.get("업무명", {}).get("rich_text", [])
             task_detail = p.get("업무내용", {}).get("rich_text", [])
-            if task_title:
-                task_line += task_title[0]["plain_text"]
-            if task_detail:
-                task_line += " | " + task_detail[0]["plain_text"]
-            if task_line:
-                task_summary.append(task_line)
+            for proj in related_titles:
+                task_line = f"[{proj}] ({split_hour:.1f}시간) "
+                if task_title:
+                    task_line += task_title[0]["plain_text"]
+                if task_detail:
+                    task_line += " | " + task_detail[0]["plain_text"]
+                if task_line:
+                    task_summary.append(task_line)
+
+        # ✅ [여기!] 총합 시간 제한 (8시간 초과시 자름)
+            total_hours = min(total_hours, 8)
 
         # ✅ 근무시간 기준으로 Select 상태 결정
         if total_hours == 8:
