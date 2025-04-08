@@ -86,6 +86,8 @@ def main():
         project_list = set()
         task_summary = []
 
+        project_name = ""  # ✅ 미리 선언
+
         for e in entries:
             p = e["properties"]
             
