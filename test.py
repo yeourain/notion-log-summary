@@ -73,6 +73,9 @@ def main():
             hour = p.get("근무시간", {}).get("number")
             total_hours += hour if hour else 0
 
+            # ✅ [여기!] 총합 시간 제한 (8시간 초과시 자름)
+            total_hours = min(total_hours, 8)
+
             # 프로젝트명
             proj = p.get("프로젝트명", {}).get("rich_text", [])
             if proj:
