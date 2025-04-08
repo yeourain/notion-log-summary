@@ -25,7 +25,7 @@ def find_existing_summary(name, date):
         database_id=SUMMARY_DB_ID,
         filter={
             "and": [
-                {"property": "이름", "title": {"equals": name}},
+                {"property": "PK", "title": {"equals": name}},
                 {"property": "날짜", "date": {"equals": date}}
             ]
         }
@@ -40,7 +40,7 @@ def main():
         props = log["properties"]
 
         # 필수 필드 확인
-        name_field = props.get("이름", {}).get("title", [])
+        name_field = props.get("PK", {}).get("title", [])
         date_field = props.get("날짜", {}).get("date", {})
 
         if not name_field or not date_field:
