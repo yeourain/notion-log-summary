@@ -87,6 +87,7 @@ def main():
 
             # 프로젝트명: 관계형(Relation) 처리
             relations = p.get("프로젝트명", {}).get("relation", [])
+            project_name = ""
             for rel in relations:
                 try:
                     page = notion.pages.retrieve(rel["id"])
@@ -100,6 +101,8 @@ def main():
             task_title = p.get("업무명", {}).get("rich_text", [])
             task_detail = p.get("업무내용", {}).get("rich_text", [])
             task_line = ""
+            if project_name:
+                task_line += f"[{project_name}] "
             if task_title:
                 task_line += task_title[0]["plain_text"]
             if task_detail:
@@ -114,6 +117,12 @@ def main():
             status = "⚠️ 미달"
         else:
             status = "🔥 초과"
+
+        # ✅ 업무 요약 → 줄바꿈 2줄씩 추가
+        rich_text_chunks = [
+            {"text": {"content": f"• {line}\n\n"}}  # ← 여기 한 줄 띄우기
+            for line in task_summary
+        ]
 
          # ✅ 업무 요약 나누기 (2000자 제한 대응)
         long_summary = "\n".join(task_summary)
