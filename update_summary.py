@@ -45,7 +45,7 @@ def main():
 
     for log in logs:
         props = log["properties"]
-        pk = props["Aa PK"]["title"][0]["plain_text"]
+        pk = props["PK"]["title"][0]["plain_text"]
         name, date = parse_name_date(pk)
         if not name or not date:
             continue
