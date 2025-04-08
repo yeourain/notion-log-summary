@@ -25,7 +25,7 @@ def find_existing_summary(name, date):
         database_id=SUMMARY_DB_ID,
         filter={
             "and": [
-                {"property": "PK", "title": {"equals": name}},
+                {"property": "이름", "title": {"equals": name}},
                 {"property": "날짜", "date": {"equals": date}}
             ]
         }
