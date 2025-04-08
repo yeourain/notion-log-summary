@@ -60,7 +60,10 @@ def main():
 
         for e in entries:
             p = e["properties"]
-            total_hours += p.get("근무시간", {}).get("number", 0)
+            
+            # 🔒 근무시간: None 처리
+            hour = p.get("근무시간", {}).get("number")
+            total_hours += hour if hour else 0
 
             # 프로젝트명
             proj = p.get("프로젝트명", {}).get("rich_text", [])
