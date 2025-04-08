@@ -1,5 +1,6 @@
 from notion_client import Client
 from collections import defaultdict
+from datetime import datetime
 import os
 
 # ✅ 환경변수에서 Notion 정보 가져오기
@@ -68,6 +69,15 @@ def main():
         if not name or not date:
             continue
 
+        grouped[(name, date)].append(log)
+
+        # ✅ 이 달에 해당하는 데이터만 필터링
+        log_date = datetime.strptime(date, "%Y-%m-%d")
+        today = datetime.today()
+        if log_date.year != today.year or log_date.month != today.month:
+            continue  # 이번 달이 아니면 무시
+
+        # ➕ 필터 통과 시만 그룹에 추가
         grouped[(name, date)].append(log)
 
     # ✅ 그룹별 Summary 생성 또는 업데이트
