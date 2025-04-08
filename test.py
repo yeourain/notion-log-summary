@@ -9,6 +9,11 @@ SUMMARY_DB_ID = os.environ["SUMMARY_DB_ID"]
 
 notion = Client(auth=NOTION_TOKEN)
 
+# ✅ 긴 텍스트를 2000자 이하로 잘라주는 함수
+def split_long_text(text, max_length=2000):
+    return [text[i:i+max_length] for i in range(0, len(text), max_length)]
+
+# ✅ 모든 Log 레코드 가져오기
 def get_log_entries():
     results = []
     cursor = None
@@ -20,6 +25,7 @@ def get_log_entries():
         cursor = response["next_cursor"]
     return results
 
+# ✅ Summary에 이미 존재하는 (이름+날짜) 확인
 def find_existing_summary(name, date):
     res = notion.databases.query(
         database_id=SUMMARY_DB_ID,
@@ -32,6 +38,7 @@ def find_existing_summary(name, date):
     )
     return res["results"][0] if res["results"] else None
 
+# ✅ 메인 실행 함수
 def main():
     logs = get_log_entries()
     grouped = defaultdict(list)
@@ -53,6 +60,7 @@ def main():
 
         grouped[(name, date)].append(log)
 
+    # ✅ 그룹별 Summary 생성 또는 업데이트
     for (name, date), entries in grouped.items():
         total_hours = 0
         project_list = set()
@@ -70,7 +78,7 @@ def main():
             if proj:
                 project_list.add(proj[0]["plain_text"])
 
-            # 업무요약
+            # 업무명 + 업무요약
             task_title = p.get("업무명", {}).get("rich_text", [])
             task_detail = p.get("업무내용", {}).get("rich_text", [])
             task_line = ""
@@ -89,13 +97,17 @@ def main():
         else:
             status = "🔥 초과"
 
+         # ✅ 업무 요약 나누기 (2000자 제한 대응)
+        long_summary = "\n".join(task_summary)
+        rich_text_chunks = [{"text": {"content": chunk}} for chunk in split_long_text(long_summary)]
+
         # ✅ Summary용 속성 구성
         summary_props = {
             "이름": {"title": [{"text": {"content": name}}]},
             "날짜": {"date": {"start": date}},
             "총합 시간": {"number": total_hours},
             "프로젝트 목록": {"rich_text": [{"text": {"content": ", ".join(project_list)}}]},
-            "업무 요약": {"rich_text": [{"text": {"content": "\n".join(task_summary)}}]},
+            "업무 요약": {"rich_text": rich_text_chunks},
             "정상 여부": {"select": {"name": status}}
         }
 
