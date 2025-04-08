@@ -112,15 +112,11 @@ def main():
 
                 if title:
                     project_list.add(title)
-                    if not project_name:
-                        project_name = title
 
             # 업무명 + 업무요약
+            task_line = f"[{title}] "
             task_title = p.get("업무명", {}).get("rich_text", [])
             task_detail = p.get("업무내용", {}).get("rich_text", [])
-            task_line = ""
-            if project_name:
-                task_line += f"[{project_name}] "
             if task_title:
                 task_line += task_title[0]["plain_text"]
             if task_detail:
@@ -138,7 +134,7 @@ def main():
 
         # ✅ 업무 요약 → 줄바꿈 2줄씩 추가
         rich_text_chunks = [
-            {"text": {"content": f"• {line}\n\n"}}  # ← 여기 한 줄 띄우기
+            {"text": {"content": f"• {line}\n\n\n"}}  # ← 여기 한 줄 띄우기
             for line in task_summary
         ]
 
