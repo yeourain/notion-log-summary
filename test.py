@@ -76,11 +76,16 @@ def main():
             # ✅ [여기!] 총합 시간 제한 (8시간 초과시 자름)
             total_hours = min(total_hours, 8)
 
-            # 프로젝트명
-            proj = p.get("프로젝트명", {}).get("rich_text", [])
-            if proj:
-                project_list.add(proj[0]["plain_text"])
-
+            # 프로젝트명: 관계형(Relation) 처리
+            relations = p.get("프로젝트명", {}).get("relation", [])
+            for rel in relations:
+                page = notion.pages.retrieve(rel["id"])
+                title_props = page["properties"]
+                title_key = next(iter(title_props))
+                title_value = title_props[title_key].get("title", [])
+                if title_value:
+                    project_list.add(title_value[0]["plain_text"])
+                    
             # 업무명 + 업무요약
             task_title = p.get("업무명", {}).get("rich_text", [])
             task_detail = p.get("업무내용", {}).get("rich_text", [])
