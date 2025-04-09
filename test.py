@@ -10,11 +10,9 @@ SUMMARY_DB_ID = os.environ["SUMMARY_DB_ID"]
 
 notion = Client(auth=NOTION_TOKEN)
 
-# ✅ 긴 텍스트를 2000자 이하로 잘라주는 함수
 def split_long_text(text, max_length=2000):
     return [text[i:i+max_length] for i in range(0, len(text), max_length)]
 
-# ✅ 관계형 페이지에서 title 속성 추출 (프로젝트명용)
 def get_title_from_page(page):
     for key, prop in page["properties"].items():
         if prop.get("type") == "title":
@@ -23,7 +21,6 @@ def get_title_from_page(page):
                 return title_data[0]["plain_text"]
     return None
 
-# ✅ 모든 Log 레코드 가져오기
 def get_log_entries():
     results = []
     cursor = None
@@ -35,7 +32,6 @@ def get_log_entries():
         cursor = response["next_cursor"]
     return results
 
-# ✅ Summary에 이미 존재하는 (이름+날짜) 확인
 def find_existing_summary(name, date):
     res = notion.databases.query(
         database_id=SUMMARY_DB_ID,
@@ -48,12 +44,17 @@ def find_existing_summary(name, date):
     )
     return res["results"][0] if res["results"] else None
 
-# ✅ Rollup 필드에서 Select 값 추출
-def extract_rollup_select(props, key):
-    rollup_array = props.get(key, {}).get("rollup", {}).get("array", [])
-    if rollup_array and isinstance(rollup_array[0], dict):
-        return rollup_array[0].get("name", "")
-    return ""
+# ✅ 직원페이지에서 '그룹', '팀' 정보 추출
+def get_group_team_from_staff_page(staff_page_id):
+    try:
+        staff_page = notion.pages.retrieve(staff_page_id)
+        props = staff_page["properties"]
+        group = props.get("그룹", {}).get("select", {}).get("name", "")
+        team = props.get("팀", {}).get("select", {}).get("name", "")
+        return group, team
+    except Exception as e:
+        print(f"❌ 직원페이지 조회 실패: {staff_page_id} → {e}")
+        return "", ""
 
 # ✅ 메인 실행 함수
 def main():
@@ -81,19 +82,21 @@ def main():
 
         grouped[(name, date)].append(log)
 
-    # ✅ 그룹별 Summary 생성 또는 업데이트
     for (name, date), entries in grouped.items():
         total_hours = 0
         project_list = set()
         task_summary = []
 
-        # ✅ 그룹, 팀 정보 추출 (Rollup 대응)
+        # ✅ 직원페이지에서 그룹/팀 가져오기
         group = ""
         team = ""
         if entries:
             first_props = entries[0]["properties"]
-            group = extract_rollup_select(first_props, "그룹")
-            team = extract_rollup_select(first_props, "팀")
+            staff_relation = first_props.get("직원페이지", {}).get("relation", [])
+            if staff_relation:
+                staff_page_id = staff_relation[0]["id"]
+                group, team = get_group_team_from_staff_page(staff_page_id)
+                print(f"[DEBUG] 직원페이지 → 그룹: {group}, 팀: {team}")
 
         for e in entries:
             p = e["properties"]
@@ -141,7 +144,6 @@ def main():
         long_summary = "\n".join(task_summary)
         rich_text_chunks = [{"text": {"content": chunk}} for chunk in split_long_text(long_summary)]
 
-        # ✅ 기본 Summary 속성
         summary_props = {
             "이름": {"title": [{"text": {"content": name}}]},
             "날짜": {"date": {"start": date}},
@@ -151,17 +153,15 @@ def main():
             "정상 여부": {"select": {"name": status}},
         }
 
-        # ✅ 그룹/팀 속성은 값 있을 때만 추가
         if group:
             summary_props["그룹"] = {"select": {"name": group}}
         if team:
             summary_props["팀"] = {"select": {"name": team}}
 
-        # ✅ 업데이트 시 "이름" 필드 제거
         existing = find_existing_summary(name, date)
         if existing:
             update_props = summary_props.copy()
-            update_props.pop("이름", None)
+            update_props.pop("이름", None)  # Notion 제한: title은 update 불가
             notion.pages.update(page_id=existing["id"], properties=update_props)
         else:
             notion.pages.create(parent={"database_id": SUMMARY_DB_ID}, properties=summary_props)
