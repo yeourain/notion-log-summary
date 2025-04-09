@@ -92,8 +92,8 @@ def main():
         team = ""
         if entries:
             first_props = entries[0]["properties"]
-            group = extract_rollup_select(first_props, "GROUP")
-            team = extract_rollup_select(first_props, "TEAM")
+            group = extract_rollup_select(first_props, "그룹")
+            team = extract_rollup_select(first_props, "팀")
 
         for e in entries:
             p = e["properties"]
