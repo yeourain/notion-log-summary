@@ -52,30 +52,27 @@ def find_existing_summary(name, date):
 def main():
     logs = get_log_entries()
     grouped = defaultdict(list)
-    project_cache = {}  # ✅ 프로젝트 페이지 캐시
+    project_cache = {}
 
     for log in logs:
         props = log["properties"]
-
-        # 필수 필드 확인
         name_field = props.get("PK", {}).get("title", [])
         date_field = props.get("날짜", {}).get("date", {})
 
         if not name_field or not date_field:
-            continue  # 이름 or 날짜가 없으면 스킵
+            continue
 
         name = name_field[0]["plain_text"]
         date = date_field.get("start")
         if not name or not date:
             continue
 
-        grouped[(name, date)].append(log)
-
-        # ✅ 이 달에 해당하는 데이터만 필터링
         log_date = datetime.strptime(date, "%Y-%m-%d")
         today = datetime.today()
         if log_date.year != today.year or log_date.month != today.month:
-            continue  # 이번 달이 아니면 무시
+            continue
+
+        grouped[(name, date)].append(log)
 
     # ✅ 그룹별 Summary 생성 또는 업데이트
     for (name, date), entries in grouped.items():
@@ -83,17 +80,20 @@ def main():
         project_list = set()
         task_summary = []
 
-        project_name = ""  # ✅ 미리 선언
+        # ✅ 그룹, 팀 정보 추출 (첫 번째 entry 기준)
+        group = ""
+        team = ""
+        if entries:
+            first_props = entries[0]["properties"]
+            group = first_props.get("그룹", {}).get("select", {}).get("name", "")
+            team = first_props.get("팀", {}).get("select", {}).get("name", "")
 
         for e in entries:
             p = e["properties"]
-            
-            # 🔒 근무시간: None 처리
             hour = p.get("근무시간", {}).get("number")
             hour = hour if hour else 0
             total_hours += hour
 
-            # 프로젝트명: 관계형(Relation) 처리
             relations = p.get("프로젝트명", {}).get("relation", [])
             related_titles = []
 
@@ -114,11 +114,8 @@ def main():
                     project_list.add(title)
                     related_titles.append(title)
 
-            # ✅ 각 프로젝트에 시간 분배
             split_hour = hour / len(related_titles) if related_titles else 0
 
-            # 업무명 + 업무요약
-            task_line = f"[{title}] "
             task_title = p.get("업무명", {}).get("rich_text", [])
             task_detail = p.get("업무내용", {}).get("rich_text", [])
             for proj in related_titles:
@@ -130,38 +127,25 @@ def main():
                 if task_line:
                     task_summary.append(task_line + "\n")
 
-        # ✅ [여기!] 총합 시간 제한 (8시간 초과시 자름)
-            total_hours = min(total_hours, 8)
+        total_hours = min(total_hours, 8)
 
-        # ✅ 근무시간 기준으로 Select 상태 결정
-        if total_hours == 8:
-            status = "✅ 정상"
-        elif total_hours < 8:
-            status = "⚠️ 미달"
-        else:
-            status = "🔥 초과"
+        status = "✅ 정상" if total_hours == 8 else "⚠️ 미달" if total_hours < 8 else "🔥 초과"
 
-        # ✅ 업무 요약 → 줄바꿈 2줄씩 추가
-        rich_text_chunks = [
-            {"text": {"content": f"• {line}\n\n\n"}}  # ← 여기 한 줄 띄우기
-            for line in task_summary
-        ]
-
-         # ✅ 업무 요약 나누기 (2000자 제한 대응)
         long_summary = "\n".join(task_summary)
         rich_text_chunks = [{"text": {"content": chunk}} for chunk in split_long_text(long_summary)]
 
-        # ✅ Summary용 속성 구성
+        # ✅ Summary 속성 구성에 그룹/팀 포함
         summary_props = {
             "이름": {"title": [{"text": {"content": name}}]},
             "날짜": {"date": {"start": date}},
             "총합 시간": {"number": total_hours},
             "프로젝트 목록": {"rich_text": [{"text": {"content": ", ".join(project_list)}}]},
             "업무 요약": {"rich_text": rich_text_chunks},
-            "정상 여부": {"select": {"name": status}}
+            "정상 여부": {"select": {"name": status}},
+            "그룹": {"select": {"name": group}} if group else {},
+            "팀": {"select": {"name": team}} if team else {},
         }
 
-        # ✅ 기존에 있으면 업데이트, 없으면 새로 생성
         existing = find_existing_summary(name, date)
         if existing:
             notion.pages.update(page_id=existing["id"], properties=summary_props)
