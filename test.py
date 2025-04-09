@@ -48,6 +48,13 @@ def find_existing_summary(name, date):
     )
     return res["results"][0] if res["results"] else None
 
+# ✅ Rollup 필드에서 Select 값 추출
+def extract_rollup_select(props, key):
+    rollup_array = props.get(key, {}).get("rollup", {}).get("array", [])
+    if rollup_array and isinstance(rollup_array[0], dict):
+        return rollup_array[0].get("name", "")
+    return ""
+
 # ✅ 메인 실행 함수
 def main():
     logs = get_log_entries()
@@ -80,13 +87,13 @@ def main():
         project_list = set()
         task_summary = []
 
-        # ✅ 그룹, 팀 정보 추출 (첫 번째 entry 기준)
+        # ✅ 그룹, 팀 정보 추출 (Rollup 대응)
         group = ""
         team = ""
         if entries:
             first_props = entries[0]["properties"]
-            group = first_props.get("GROUP", {}).get("select", {}).get("name", "")
-            team = first_props.get("TEAM", {}).get("select", {}).get("name", "")
+            group = extract_rollup_select(first_props, "GROUP")
+            team = extract_rollup_select(first_props, "TEAM")
 
         for e in entries:
             p = e["properties"]
@@ -150,7 +157,7 @@ def main():
         if team:
             summary_props["팀"] = {"select": {"name": team}}
 
-        # ✅ 업데이트 시 "이름" 필드 제거 (Notion 제한 때문)
+        # ✅ 업데이트 시 "이름" 필드 제거
         existing = find_existing_summary(name, date)
         if existing:
             update_props = summary_props.copy()
