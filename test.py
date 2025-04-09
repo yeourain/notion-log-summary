@@ -134,7 +134,7 @@ def main():
         long_summary = "\n".join(task_summary)
         rich_text_chunks = [{"text": {"content": chunk}} for chunk in split_long_text(long_summary)]
 
-        # ✅ Summary 속성 구성에 그룹/팀 포함
+        # ✅ 기본 Summary 속성
         summary_props = {
             "이름": {"title": [{"text": {"content": name}}]},
             "날짜": {"date": {"start": date}},
@@ -142,13 +142,20 @@ def main():
             "프로젝트 목록": {"rich_text": [{"text": {"content": ", ".join(project_list)}}]},
             "업무 요약": {"rich_text": rich_text_chunks},
             "정상 여부": {"select": {"name": status}},
-            "그룹": {"select": {"name": group}} if group else {},
-            "팀": {"select": {"name": team}} if team else {},
         }
 
+        # ✅ 그룹/팀 속성은 값 있을 때만 추가
+        if group:
+            summary_props["그룹"] = {"select": {"name": group}}
+        if team:
+            summary_props["팀"] = {"select": {"name": team}}
+
+        # ✅ 업데이트 시 "이름" 필드 제거 (Notion 제한 때문)
         existing = find_existing_summary(name, date)
         if existing:
-            notion.pages.update(page_id=existing["id"], properties=summary_props)
+            update_props = summary_props.copy()
+            update_props.pop("이름", None)
+            notion.pages.update(page_id=existing["id"], properties=update_props)
         else:
             notion.pages.create(parent={"database_id": SUMMARY_DB_ID}, properties=summary_props)
 
