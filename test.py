@@ -85,8 +85,8 @@ def main():
         team = ""
         if entries:
             first_props = entries[0]["properties"]
-            group = first_props.get("그룹", {}).get("select", {}).get("name", "")
-            team = first_props.get("팀", {}).get("select", {}).get("name", "")
+            group = first_props.get("GROUP", {}).get("select", {}).get("name", "")
+            team = first_props.get("TEAM", {}).get("select", {}).get("name", "")
 
         for e in entries:
             p = e["properties"]
