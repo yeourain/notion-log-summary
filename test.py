@@ -122,7 +122,7 @@ def main():
             task_title = p.get("업무명", {}).get("rich_text", [])
             task_detail = p.get("업무내용", {}).get("rich_text", [])
             for proj in related_titles:
-                task_line = f"[{proj}] ({split_hour:.1f}시간) "
+                task_line = f"({split_hour:.1f}) [{proj}] "
                 if task_title:
                     task_line += task_title[0]["plain_text"]
                 if task_detail:
