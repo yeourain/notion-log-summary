@@ -1,3 +1,4 @@
+import time
 from notion_client import Client
 from collections import defaultdict
 from datetime import datetime
@@ -22,14 +23,13 @@ def get_title_from_page(page):
                 return title_data[0]["plain_text"]
     return None
 
-# ✅ 프로젝트 ID 리스트를 한 번에 캐싱
+# ✅ 프로젝트 ID 리스트를 캐싱
 def build_project_title_cache(logs):
     project_ids = set()
     for log in logs:
         relations = log["properties"].get("프로젝트명", {}).get("relation", [])
         for rel in relations:
             project_ids.add(rel["id"])
-    
     cache = {}
     for pid in project_ids:
         try:
@@ -77,6 +77,28 @@ def get_group_team_from_staff_page(staff_page_id):
     except Exception as e:
         print(f"❌ 직원페이지 조회 실패: {staff_page_id} → {e}")
         return "", ""
+
+# ✅ Notion 페이지 안전 업데이트
+def safe_update_page(page_id, properties, retries=3, delay=2):
+    for attempt in range(retries):
+        try:
+            notion.pages.update(page_id=page_id, properties=properties)
+            return
+        except Exception as e:
+            print(f"⚠️ update 실패 (시도 {attempt + 1}): {e}")
+            time.sleep(delay)
+    print("❌ update 최종 실패")
+
+# ✅ Notion 페이지 안전 생성
+def safe_create_page(database_id, properties, retries=3, delay=2):
+    for attempt in range(retries):
+        try:
+            notion.pages.create(parent={"database_id": database_id}, properties=properties)
+            return
+        except Exception as e:
+            print(f"⚠️ create 실패 (시도 {attempt + 1}): {e}")
+            time.sleep(delay)
+    print("❌ create 최종 실패")
 
 # ✅ 전체 로그 가져오기
 def get_log_entries():
@@ -146,6 +168,7 @@ def main():
                 if task_detail:
                     task_line += " | " + task_detail[0]["plain_text"]
                 task_summary.append(task_line + "\n")
+                project_list.add(proj)
 
         total_hours = min(total_hours, 8)
         status = "✅ 정상" if total_hours == 8 else "⚠️ 미달" if total_hours < 8 else "🔥 초과"
@@ -170,9 +193,9 @@ def main():
         if existing:
             update_props = summary_props.copy()
             update_props.pop("이름", None)
-            notion.pages.update(page_id=existing["id"], properties=update_props)
+            safe_update_page(existing["id"], update_props)
         else:
-            notion.pages.create(parent={"database_id": SUMMARY_DB_ID}, properties=summary_props)
+            safe_create_page(SUMMARY_DB_ID, summary_props)
 
 if __name__ == "__main__":
     main()
