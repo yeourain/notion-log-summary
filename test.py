@@ -1,5 +1,5 @@
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from notion_client import Client
 from collections import defaultdict
 from datetime import datetime
@@ -22,7 +22,7 @@ def get_title_from_page(page):
                 return title_data[0]["plain_text"]
     return None
 
-# ✅ 병렬 프로젝트 캐싱
+# ✅ 병렬 프로젝트 캐싱 (with 재시도)
 def build_project_title_cache(logs):
     project_ids = set()
     for log in logs:
@@ -42,7 +42,7 @@ def build_project_title_cache(logs):
                 time.sleep(1)
         return pid, None
 
-    with ThreadPoolExecutor(max_workers=10) as executor:
+    with ThreadPoolExecutor(max_workers=5) as executor:
         futures = [executor.submit(fetch_title, pid) for pid in project_ids]
         for future in as_completed(futures):
             pid, title = future.result()
@@ -51,17 +51,25 @@ def build_project_title_cache(logs):
 
     return cache
 
-def find_existing_summary(name, date):
-    res = notion.databases.query(
-        database_id=SUMMARY_DB_ID,
-        filter={
-            "and": [
-                {"property": "이름", "title": {"equals": name}},
-                {"property": "날짜", "date": {"equals": date}}
-            ]
-        }
-    )
-    return res["results"][0] if res["results"] else None
+# ✅ Summary 중복 확인 (with 재시도)
+def find_existing_summary(name, date, retries=3, delay=2):
+    for attempt in range(retries):
+        try:
+            res = notion.databases.query(
+                database_id=SUMMARY_DB_ID,
+                filter={
+                    "and": [
+                        {"property": "이름", "title": {"equals": name}},
+                        {"property": "날짜", "date": {"equals": date}}
+                    ]
+                }
+            )
+            return res["results"][0] if res["results"] else None
+        except Exception as e:
+            print(f"⚠️ 요약 조회 실패 (시도 {attempt+1}): {e}")
+            time.sleep(delay)
+    print("❌ 요약 최종 조회 실패 → name:", name, "/ date:", date)
+    return None
 
 def get_select_or_text(props, field_name):
     field = props.get(field_name, {})
@@ -74,14 +82,15 @@ def get_select_or_text(props, field_name):
             return texts[0].get("plain_text", "")
     return ""
 
+# ✅ 직원페이지에서 그룹/팀 정보 (with 캐시 + 재시도)
 def get_group_team_from_staff_page(staff_page_id, staff_cache):
     if staff_page_id in staff_cache:
         return staff_cache[staff_page_id]
 
     for _ in range(3):
         try:
-            staff_page = notion.pages.retrieve(staff_page_id)
-            props = staff_page["properties"]
+            page = notion.pages.retrieve(staff_page_id)
+            props = page["properties"]
             group = get_select_or_text(props, "그룹")
             team = get_select_or_text(props, "팀")
             staff_cache[staff_page_id] = (group, team)
@@ -93,6 +102,7 @@ def get_group_team_from_staff_page(staff_page_id, staff_cache):
     staff_cache[staff_page_id] = ("", "")
     return "", ""
 
+# ✅ Notion safe update/create
 def safe_update_page(page_id, properties, retries=3, delay=2):
     for attempt in range(retries):
         try:
@@ -113,6 +123,7 @@ def safe_create_page(database_id, properties, retries=3, delay=2):
             time.sleep(delay)
     print("❌ create 최종 실패")
 
+# ✅ 전체 Log 조회
 def get_log_entries():
     results = []
     cursor = None
@@ -124,6 +135,7 @@ def get_log_entries():
         cursor = response["next_cursor"]
     return results
 
+# ✅ 메인 실행
 def main():
     logs = get_log_entries()
     grouped = defaultdict(list)
@@ -154,8 +166,7 @@ def main():
         group = ""
         team = ""
         if entries:
-            first_props = entries[0]["properties"]
-            staff_relation = first_props.get("직원페이지", {}).get("relation", [])
+            staff_relation = entries[0]["properties"].get("직원페이지", {}).get("relation", [])
             if staff_relation:
                 staff_page_id = staff_relation[0]["id"]
                 group, team = get_group_team_from_staff_page(staff_page_id, staff_cache)
@@ -173,7 +184,7 @@ def main():
             task_title = p.get("업무명", {}).get("rich_text", [])
             task_detail = p.get("업무내용", {}).get("rich_text", [])
             for proj in related_titles:
-                task_line = f"[({split_hour:.1f}시간) {proj}]\n"
+                task_line = f"[({split_hour:.1f}) {proj}]\n"
                 if task_title:
                     task_line += task_title[0]["plain_text"]
                 if task_detail:
