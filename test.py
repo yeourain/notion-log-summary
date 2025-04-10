@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 from notion_client import Client
 from collections import defaultdict
@@ -10,11 +11,9 @@ LOG_DB_ID = os.environ["LOG_DB_ID"]
 SUMMARY_DB_ID = os.environ["SUMMARY_DB_ID"]
 notion = Client(auth=NOTION_TOKEN)
 
-# ✅ 긴 텍스트를 2000자 이하로 잘라주는 함수
 def split_long_text(text, max_length=2000):
     return [text[i:i + max_length] for i in range(0, len(text), max_length)]
 
-# ✅ 관계형 페이지에서 title 속성 추출
 def get_title_from_page(page):
     for key, prop in page["properties"].items():
         if prop.get("type") == "title":
@@ -23,25 +22,35 @@ def get_title_from_page(page):
                 return title_data[0]["plain_text"]
     return None
 
-# ✅ 프로젝트 ID 리스트를 캐싱
+# ✅ 병렬 프로젝트 캐싱
 def build_project_title_cache(logs):
     project_ids = set()
     for log in logs:
         relations = log["properties"].get("프로젝트명", {}).get("relation", [])
         for rel in relations:
             project_ids.add(rel["id"])
+
     cache = {}
-    for pid in project_ids:
-        try:
-            page = notion.pages.retrieve(pid)
-            title = get_title_from_page(page)
+
+    def fetch_title(pid):
+        for _ in range(3):
+            try:
+                page = notion.pages.retrieve(pid)
+                return pid, get_title_from_page(page)
+            except Exception as e:
+                print(f"⚠️ 프로젝트 조회 실패 {pid}, 재시도: {e}")
+                time.sleep(1)
+        return pid, None
+
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = [executor.submit(fetch_title, pid) for pid in project_ids]
+        for future in as_completed(futures):
+            pid, title = future.result()
             if title:
                 cache[pid] = title
-        except Exception as e:
-            print(f"❌ 프로젝트 조회 실패: {pid} → {e}")
+
     return cache
 
-# ✅ Summary에 이미 존재하는 확인
 def find_existing_summary(name, date):
     res = notion.databases.query(
         database_id=SUMMARY_DB_ID,
@@ -54,7 +63,6 @@ def find_existing_summary(name, date):
     )
     return res["results"][0] if res["results"] else None
 
-# ✅ Select 또는 Text 타입 처리
 def get_select_or_text(props, field_name):
     field = props.get(field_name, {})
     field_type = field.get("type", "")
@@ -66,19 +74,25 @@ def get_select_or_text(props, field_name):
             return texts[0].get("plain_text", "")
     return ""
 
-# ✅ 직원페이지에서 그룹/팀 정보 추출
-def get_group_team_from_staff_page(staff_page_id):
-    try:
-        staff_page = notion.pages.retrieve(staff_page_id)
-        props = staff_page["properties"]
-        group = get_select_or_text(props, "그룹")
-        team = get_select_or_text(props, "팀")
-        return group, team
-    except Exception as e:
-        print(f"❌ 직원페이지 조회 실패: {staff_page_id} → {e}")
-        return "", ""
+def get_group_team_from_staff_page(staff_page_id, staff_cache):
+    if staff_page_id in staff_cache:
+        return staff_cache[staff_page_id]
 
-# ✅ Notion 페이지 안전 업데이트
+    for _ in range(3):
+        try:
+            staff_page = notion.pages.retrieve(staff_page_id)
+            props = staff_page["properties"]
+            group = get_select_or_text(props, "그룹")
+            team = get_select_or_text(props, "팀")
+            staff_cache[staff_page_id] = (group, team)
+            return group, team
+        except Exception as e:
+            print(f"⚠️ 직원페이지 조회 실패 {staff_page_id}, 재시도: {e}")
+            time.sleep(1)
+
+    staff_cache[staff_page_id] = ("", "")
+    return "", ""
+
 def safe_update_page(page_id, properties, retries=3, delay=2):
     for attempt in range(retries):
         try:
@@ -89,7 +103,6 @@ def safe_update_page(page_id, properties, retries=3, delay=2):
             time.sleep(delay)
     print("❌ update 최종 실패")
 
-# ✅ Notion 페이지 안전 생성
 def safe_create_page(database_id, properties, retries=3, delay=2):
     for attempt in range(retries):
         try:
@@ -100,7 +113,6 @@ def safe_create_page(database_id, properties, retries=3, delay=2):
             time.sleep(delay)
     print("❌ create 최종 실패")
 
-# ✅ 전체 로그 가져오기
 def get_log_entries():
     results = []
     cursor = None
@@ -112,7 +124,6 @@ def get_log_entries():
         cursor = response["next_cursor"]
     return results
 
-# ✅ 메인 실행
 def main():
     logs = get_log_entries()
     grouped = defaultdict(list)
@@ -132,8 +143,8 @@ def main():
 
         grouped[(name, date)].append(log)
 
-    # ✅ 프로젝트 캐싱 (속도 향상)
     project_cache = build_project_title_cache(logs)
+    staff_cache = {}
 
     for (name, date), entries in grouped.items():
         total_hours = 0
@@ -147,7 +158,7 @@ def main():
             staff_relation = first_props.get("직원페이지", {}).get("relation", [])
             if staff_relation:
                 staff_page_id = staff_relation[0]["id"]
-                group, team = get_group_team_from_staff_page(staff_page_id)
+                group, team = get_group_team_from_staff_page(staff_page_id, staff_cache)
 
         for e in entries:
             p = e["properties"]
