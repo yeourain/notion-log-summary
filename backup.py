@@ -48,52 +48,78 @@ def find_existing_summary(name, date):
     )
     return res["results"][0] if res["results"] else None
 
+# ✅ Select 또는 Text 타입에 따라 자동 추출
+def get_select_or_text(props, field_name):
+    field = props.get(field_name, {})
+    field_type = field.get("type", "")
+    if field_type == "select":
+        return field.get("select", {}).get("name", "")
+    elif field_type == "rich_text":
+        texts = field.get("rich_text", [])
+        if texts:
+            return texts[0].get("plain_text", "")
+    return ""
+
+# ✅ 직원페이지에서 그룹/팀 추출
+def get_group_team_from_staff_page(staff_page_id):
+    try:
+        staff_page = notion.pages.retrieve(staff_page_id)
+        props = staff_page["properties"]
+
+        group = get_select_or_text(props, "그룹")
+        team = get_select_or_text(props, "팀")
+
+        print(f"[DEBUG] 직원페이지 필드 확인 → 그룹: {group}, 팀: {team}")
+        return group, team
+    except Exception as e:
+        print(f"❌ 직원페이지 조회 실패: {staff_page_id} → {e}")
+        return "", ""
+
 # ✅ 메인 실행 함수
 def main():
     logs = get_log_entries()
     grouped = defaultdict(list)
-    project_cache = {}  # ✅ 프로젝트 페이지 캐시
+    project_cache = {}
 
     for log in logs:
         props = log["properties"]
-
-        # 필수 필드 확인
         name_field = props.get("PK", {}).get("title", [])
         date_field = props.get("날짜", {}).get("date", {})
 
         if not name_field or not date_field:
-            continue  # 이름 or 날짜가 없으면 스킵
+            continue
 
         name = name_field[0]["plain_text"]
         date = date_field.get("start")
         if not name or not date:
             continue
 
+        #   log_date = datetime.strptime(date, "%Y-%m-%d")
+        #   today = datetime.today()
+        #   if log_date.year != today.year or log_date.month != today.month:
+        #       continue
+
         grouped[(name, date)].append(log)
 
-        # ✅ 이 달에 해당하는 데이터만 필터링
-        log_date = datetime.strptime(date, "%Y-%m-%d")
-        today = datetime.today()
-        if log_date.year != today.year or log_date.month != today.month:
-            continue  # 이번 달이 아니면 무시
-
-    # ✅ 그룹별 Summary 생성 또는 업데이트
     for (name, date), entries in grouped.items():
         total_hours = 0
         project_list = set()
         task_summary = []
 
-        project_name = ""  # ✅ 미리 선언
+        group = ""
+        team = ""
+        if entries:
+            first_props = entries[0]["properties"]
+            staff_relation = first_props.get("직원페이지", {}).get("relation", [])
+            if staff_relation:
+                staff_page_id = staff_relation[0]["id"]
+                group, team = get_group_team_from_staff_page(staff_page_id)
 
         for e in entries:
             p = e["properties"]
-            
-            # 🔒 근무시간: None 처리
-            hour = p.get("근무시간", {}).get("number")
-            hour = hour if hour else 0
+            hour = p.get("근무시간", {}).get("number") or 0
             total_hours += hour
 
-            # 프로젝트명: 관계형(Relation) 처리
             relations = p.get("프로젝트명", {}).get("relation", [])
             related_titles = []
 
@@ -114,11 +140,8 @@ def main():
                     project_list.add(title)
                     related_titles.append(title)
 
-            # ✅ 각 프로젝트에 시간 분배
             split_hour = hour / len(related_titles) if related_titles else 0
 
-            # 업무명 + 업무요약
-            task_line = f"[{title}] "
             task_title = p.get("업무명", {}).get("rich_text", [])
             task_detail = p.get("업무내용", {}).get("rich_text", [])
             for proj in related_titles:
@@ -130,41 +153,31 @@ def main():
                 if task_line:
                     task_summary.append(task_line + "\n")
 
-        # ✅ [여기!] 총합 시간 제한 (8시간 초과시 자름)
-            total_hours = min(total_hours, 8)
+        total_hours = min(total_hours, 8)
+        status = "✅ 정상" if total_hours == 8 else "⚠️ 미달" if total_hours < 8 else "🔥 초과"
 
-        # ✅ 근무시간 기준으로 Select 상태 결정
-        if total_hours == 8:
-            status = "✅ 정상"
-        elif total_hours < 8:
-            status = "⚠️ 미달"
-        else:
-            status = "🔥 초과"
-
-        # ✅ 업무 요약 → 줄바꿈 2줄씩 추가
-        rich_text_chunks = [
-            {"text": {"content": f"• {line}\n\n\n"}}  # ← 여기 한 줄 띄우기
-            for line in task_summary
-        ]
-
-         # ✅ 업무 요약 나누기 (2000자 제한 대응)
         long_summary = "\n".join(task_summary)
         rich_text_chunks = [{"text": {"content": chunk}} for chunk in split_long_text(long_summary)]
 
-        # ✅ Summary용 속성 구성
         summary_props = {
             "이름": {"title": [{"text": {"content": name}}]},
             "날짜": {"date": {"start": date}},
             "총합 시간": {"number": total_hours},
             "프로젝트 목록": {"rich_text": [{"text": {"content": ", ".join(project_list)}}]},
             "업무 요약": {"rich_text": rich_text_chunks},
-            "정상 여부": {"select": {"name": status}}
+            "정상 여부": {"select": {"name": status}},
         }
 
-        # ✅ 기존에 있으면 업데이트, 없으면 새로 생성
+        if group:
+            summary_props["그룹"] = {"select": {"name": group}}
+        if team:
+            summary_props["팀"] = {"select": {"name": team}}
+
         existing = find_existing_summary(name, date)
         if existing:
-            notion.pages.update(page_id=existing["id"], properties=summary_props)
+            update_props = summary_props.copy()
+            update_props.pop("이름", None)  # Notion 제한: title은 update 불가
+            notion.pages.update(page_id=existing["id"], properties=update_props)
         else:
             notion.pages.create(parent={"database_id": SUMMARY_DB_ID}, properties=summary_props)
 
