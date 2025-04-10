@@ -94,10 +94,10 @@ def main():
         if not name or not date:
             continue
 
-        log_date = datetime.strptime(date, "%Y-%m-%d")
-        today = datetime.today()
-        if log_date.year != today.year or log_date.month != today.month:
-            continue
+        #   log_date = datetime.strptime(date, "%Y-%m-%d")
+        #   today = datetime.today()
+        #   if log_date.year != today.year or log_date.month != today.month:
+        #       continue
 
         grouped[(name, date)].append(log)
 
